@@ -1,0 +1,88 @@
+# =============================================================================
+# ZENTRALE MARKTDATEN-DATENBANK KONFIGURATION
+# =============================================================================
+# Version: 1.0
+# Erstellt: 2026-01-08
+# Zweck: Konfiguration für zentrale Kursdatenbank, nutzbar von mehreren Projekten
+
+database:
+  path: "/Users/pawelblicharski/Software_Projekt/MarketData/market_data.db"
+  backup_dir: "/Users/pawelblicharski/Software_Projekt/MarketData/backups"
+  backup_frequency: "daily"  # daily, weekly, monthly
+  max_backups: 30  # Anzahl zu behaltender Backups
+
+data_sources:
+  primary: "yfinance"
+  fallback: []  # Später: ["eodhd", "alphavantage"]
+  
+update_schedule:
+  # Wann sollen Daten aktualisiert werden?
+  time: "02:00"  # 02:00 Uhr nachts
+  timezone: "Europe/Berlin"
+  days: ["monday", "tuesday", "wednesday", "thursday", "friday"]  # Werktags
+  
+  # Welche Assets sollen täglich aktualisiert werden?
+  auto_update:
+    - type: "index"
+      symbols: ["^GSPC", "^DJI", "^IXIC", "^RUT", "^GDAXI", "^STOXX50E"]
+    - type: "stock"
+      universe: "sp500"  # Alle S&P 500 Aktien
+    - type: "commodity"
+      symbols: ["GC=F", "SI=F", "CL=F"]  # Gold, Silber, Öl
+
+data_quality:
+  # Automatische Qualitätsprüfungen
+  check_gaps: true  # Prüfe auf fehlende Daten
+  check_outliers: true  # Prüfe auf extreme Ausreißer
+  outlier_threshold: 0.20  # 20% Tagesänderung = Warnung
+  
+  # Wie sollen fehlerhafte Daten behandelt werden?
+  on_gap: "warn"  # "warn", "fill_forward", "skip"
+  on_outlier: "warn"  # "warn", "reject", "flag"
+
+indicators:
+  # Welche Indikatoren sollen pre-calculated werden?
+  cache_indicators:
+    - name: "sma_20"
+      recalc_frequency: "daily"
+    - name: "sma_50"
+      recalc_frequency: "daily"
+    - name: "sma_200"
+      recalc_frequency: "daily"
+    - name: "ema_20"
+      recalc_frequency: "daily"
+    - name: "ema_50"
+      recalc_frequency: "daily"
+    - name: "ema_200"
+      recalc_frequency: "daily"
+    - name: "rsl_26w"
+      recalc_frequency: "weekly"
+    - name: "seasonality"
+      recalc_frequency: "monthly"  # Nur bei neuen Daten
+
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_dir: "/Users/pawelblicharski/Software_Projekt/MarketData/logs"
+  retention_days: 90  # Logs älter als 90 Tage löschen
+
+performance:
+  # Performance-Optimierungen
+  batch_size: 100  # Anzahl Symbole pro Batch-Update
+  max_workers: 4  # Parallel-Threads für Daten-Download
+  cache_size_mb: 500  # RAM-Cache für häufig genutzte Daten
+
+migration:
+  # Einstellungen für Migration aus alter Datenbank
+  old_db_path: "/Users/pawelblicharski/TradingTool/database/trading_strategies.db"
+  migrate_tables:
+    - source: "stocks_data"
+      target: "price_data"
+      mapping:
+        symbol: "symbol"
+        date: "date"
+        open: "open"
+        high: "high"
+        low: "low"
+        close: "close"
+        adj_close: "close"  # Fallback: close wenn adj_close fehlt
+        volume: "volume"

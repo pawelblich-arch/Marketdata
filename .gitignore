@@ -1,0 +1,54 @@
+# =============================================================================
+# MarketData .gitignore
+# =============================================================================
+# Datenbank-Dateien (zu groß für Git)
+# =============================================================================
+
+# SQLite Datenbanken (NICHT in Git!)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Backups (lokal halten)
+backups/*.db
+backups/*.db.bak
+backups/*.tar.gz
+
+# Logs (lokal halten)
+logs/*.log
+logs/*.txt
+logs/.last_update_timestamp
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Temporäre Dateien
+*.tmp
+*.temp
+.cache/
+
+# =============================================================================
+# WAS IN GIT SOLL:
+# - scripts/ (Python Scripts)
+# - config.yaml (Konfiguration)
+# - schema.sql (DB-Schema)
+# - README.md (Dokumentation)
+# - *.command (Starter-Scripts)
+# =============================================================================
