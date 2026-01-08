@@ -331,9 +331,97 @@ def main():
     
     st.markdown("---")
     
-    # Sidebar - Asset hinzufügen
+    # Sidebar
     with st.sidebar:
-        st.header("➕ Neues Asset hinzufügen")
+        st.header("🔧 Aktionen")
+        
+        # Daten-Update Button
+        st.subheader("📥 Daten-Update")
+        
+        if st.button("🚀 Daten von yfinance laden", use_container_width=True, type="primary"):
+            import subprocess
+            import os
+            
+            # Starte daily_update.py im Hintergrund
+            script_path = BASE_DIR / "scripts" / "daily_update.py"
+            log_path = BASE_DIR / "logs" / f"gui_update_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            
+            # Aktiviere venv und starte Script
+            venv_python = "/Users/pawelblicharski/TradingTool/venv/bin/python3"
+            
+            try:
+                # Starte im Hintergrund
+                with open(log_path, 'w') as log_file:
+                    subprocess.Popen(
+                        [venv_python, str(script_path)],
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT,
+                        cwd=str(BASE_DIR)
+                    )
+                
+                st.success("✅ Update gestartet!")
+                st.info(f"📊 Lädt Daten für alle aktiven Assets...\n\nLog: `{log_path.name}`")
+                st.caption("⏱️ Dauer: ~10-15 Minuten für alle Assets")
+                
+            except Exception as e:
+                st.error(f"❌ Fehler: {e}")
+        
+        st.caption("💡 Lädt OHLCV-Daten + Sentiment (VIX, VDAX, etc.)")
+        
+        # Externe Sentiment Update
+        if st.button("📊 Externe Sentiment laden", use_container_width=True):
+            import subprocess
+            
+            script_path = BASE_DIR / "scripts" / "update_sentiment_external.py"
+            log_path = BASE_DIR / "logs" / f"gui_sentiment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            venv_python = "/Users/pawelblicharski/TradingTool/venv/bin/python3"
+            
+            try:
+                with open(log_path, 'w') as log_file:
+                    subprocess.Popen(
+                        [venv_python, str(script_path)],
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT,
+                        cwd=str(BASE_DIR)
+                    )
+                
+                st.success("✅ Sentiment-Update gestartet!")
+                st.info(f"📊 Lädt Fear & Greed, AAII, Put/Call...\n\nLog: `{log_path.name}`")
+                
+            except Exception as e:
+                st.error(f"❌ Fehler: {e}")
+        
+        st.caption("💡 Fear & Greed, AAII, Put/Call Ratio")
+        
+        # Update-Status anzeigen
+        conn = get_connection()
+        last_update_query = """
+            SELECT 
+                update_type,
+                symbols_updated,
+                records_inserted,
+                duration_seconds,
+                completed_at
+            FROM update_log
+            ORDER BY completed_at DESC
+            LIMIT 1
+        """
+        last_update = pd.read_sql_query(last_update_query, conn)
+        
+        if not last_update.empty:
+            st.markdown("---")
+            st.caption("**📅 Letztes Update:**")
+            update_time = datetime.strptime(last_update['completed_at'].iloc[0], '%Y-%m-%d %H:%M:%S')
+            st.caption(f"🕐 {update_time.strftime('%d.%m.%Y %H:%M')}")
+            st.caption(f"📊 {last_update['symbols_updated'].iloc[0]} Assets")
+            st.caption(f"📥 {last_update['records_inserted'].iloc[0]:,} neue Datenpunkte")
+            duration_min = int(last_update['duration_seconds'].iloc[0] / 60)
+            st.caption(f"⏱️ {duration_min} Minuten")
+        
+        st.markdown("---")
+        
+        # Asset hinzufügen
+        st.subheader("➕ Neues Asset hinzufügen")
         
         with st.form("add_asset_form"):
             symbol = st.text_input("Symbol (z.B. AAPL, GC=F)", key="new_symbol").upper()
