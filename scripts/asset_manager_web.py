@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Asset Manager - Streamlit Web GUI (Multi-Table View)
+Asset Manager - Streamlit Web GUI (Multi-Table View mit Filtern)
 Moderne Web-Oberfläche zur Verwaltung der MarketData Assets
 
 Autor: Trading System v2
@@ -22,7 +22,7 @@ st.set_page_config(
     page_title="MarketData Asset Manager",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
     menu_items={
         'Get Help': None,
         'Report a bug': None,
@@ -65,8 +65,8 @@ def get_connection():
     return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 
-def load_assets_by_group(asset_group=None, asset_type=None):
-    """Lädt Assets nach Gruppe/Typ."""
+def load_assets_by_group(asset_group=None, asset_type=None, search_term=None):
+    """Lädt Assets nach Gruppe/Typ mit optionalem Suchfilter."""
     conn = get_connection()
     
     where_clauses = ["a.is_active = 1"]  # Nur aktive Assets
@@ -101,6 +101,15 @@ def load_assets_by_group(asset_group=None, asset_type=None):
     """
     
     df = pd.read_sql_query(query, conn)
+    
+    # Suchfilter
+    if search_term and not df.empty:
+        mask = (
+            df['symbol'].str.contains(search_term, case=False, na=False) |
+            df['name'].str.contains(search_term, case=False, na=False) |
+            df['sector'].str.contains(search_term, case=False, na=False)
+        )
+        df = df[mask]
     
     # Formatierung
     if not df.empty:
@@ -144,8 +153,31 @@ def load_sentiment_data():
     return df
 
 
+def add_asset(symbol, asset_type, timeframe='1d', asset_group=None, name=None):
+    """Fügt ein neues Asset hinzu."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO asset_metadata 
+            (symbol, name, asset_type, asset_group, timeframe, is_active)
+            VALUES (?, ?, ?, ?, ?, 1)
+        """, (symbol, name, asset_type, asset_group, timeframe))
+        
+        conn.commit()
+        st.cache_resource.clear()  # Cache leeren
+        return True, f"✅ Asset {symbol} erfolgreich hinzugefügt!"
+        
+    except sqlite3.IntegrityError:
+        return False, f"⚠️ Asset {symbol} existiert bereits!"
+    
+    except Exception as e:
+        return False, f"❌ Fehler: {str(e)}"
+
+
 def display_asset_table(title, emoji, df, key_suffix):
-    """Zeigt eine Asset-Tabelle an."""
+    """Zeigt eine Asset-Tabelle mit Filter an."""
     
     st.markdown(f"""
     <div class="section-header">
@@ -157,8 +189,8 @@ def display_asset_table(title, emoji, df, key_suffix):
         st.info(f"Keine {title} in der Datenbank.")
         return
     
-    # Statistik
-    col1, col2, col3 = st.columns(3)
+    # Statistik + Filter
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
     with col1:
         st.metric("Assets", len(df))
     with col2:
@@ -168,6 +200,25 @@ def display_asset_table(title, emoji, df, key_suffix):
         if 'data_quality_score' in df.columns:
             avg_quality = df['data_quality_score'].mean()
             st.metric("Qualität Ø", f"{avg_quality:.0%}")
+    with col4:
+        search = st.text_input(
+            f"🔍 Filter {title}:",
+            key=f"search_{key_suffix}",
+            placeholder="Symbol, Name, Sektor..."
+        )
+    
+    # Filter anwenden
+    if search:
+        mask = (
+            df['symbol'].str.contains(search, case=False, na=False) |
+            df['name'].str.contains(search, case=False, na=False) |
+            df['sector'].str.contains(search, case=False, na=False)
+        )
+        df = df[mask]
+        
+        if df.empty:
+            st.warning(f"Keine Treffer für: '{search}'")
+            return
     
     # Tabelle
     display_columns = {
@@ -208,8 +259,8 @@ def display_sentiment_table(df):
         st.info("Keine Sentiment-Daten verfügbar. Führen Sie 'MarketData_Update.command' aus.")
         return
     
-    # Statistik
-    col1, col2, col3 = st.columns(3)
+    # Statistik + Filter
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
     with col1:
         st.metric("Indikatoren", len(df))
     with col2:
@@ -218,6 +269,21 @@ def display_sentiment_table(df):
     with col3:
         sources = df['source'].nunique()
         st.metric("Quellen", sources)
+    with col4:
+        search = st.text_input(
+            "🔍 Filter Sentiment:",
+            key="search_sentiment",
+            placeholder="VIX, Fear..."
+        )
+    
+    # Filter anwenden
+    if search:
+        mask = df['indicator'].str.contains(search, case=False, na=False)
+        df = df[mask]
+        
+        if df.empty:
+            st.warning(f"Keine Treffer für: '{search}'")
+            return
     
     # Tabelle
     display_df = df[['indicator', 'value', 'date', 'source']].copy()
@@ -264,6 +330,59 @@ def main():
             st.rerun()
     
     st.markdown("---")
+    
+    # Sidebar - Asset hinzufügen
+    with st.sidebar:
+        st.header("➕ Neues Asset hinzufügen")
+        
+        with st.form("add_asset_form"):
+            symbol = st.text_input("Symbol (z.B. AAPL, GC=F)", key="new_symbol").upper()
+            name = st.text_input("Name (optional)", key="new_name")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                asset_type = st.selectbox(
+                    "Typ",
+                    ["stock", "index", "commodity", "fx", "bond"],
+                    key="new_type"
+                )
+            with col2:
+                timeframe = st.selectbox(
+                    "Zeitrahmen",
+                    ["5min", "15min", "1h", "1d", "1w"],
+                    index=3,
+                    key="new_timeframe"
+                )
+            
+            asset_group = st.selectbox(
+                "Asset-Gruppe",
+                ["", "sp500", "nasdaq100", "dax", "eurostoxx", "commodity", "index", "fx", "bonds"],
+                format_func=lambda x: "Keine Gruppe" if x == "" else x.upper(),
+                key="new_group"
+            )
+            
+            submitted = st.form_submit_button("➕ Hinzufügen", use_container_width=True)
+            
+            if submitted:
+                if not symbol:
+                    st.error("❌ Symbol darf nicht leer sein!")
+                else:
+                    success, message = add_asset(
+                        symbol,
+                        asset_type,
+                        timeframe,
+                        asset_group if asset_group else None,
+                        name if name else None
+                    )
+                    
+                    if success:
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+        
+        st.markdown("---")
+        st.caption("💡 Nach dem Hinzufügen: 'MarketData_Update.command' ausführen!")
     
     # Gesamtstatistik
     conn = get_connection()
@@ -316,7 +435,7 @@ def main():
     st.markdown("---")
     st.caption("""
     💡 **Tipps:**  
-    - Assets hinzufügen: Datenbank direkt editieren oder über TradingTool  
+    - Assets hinzufügen: Sidebar links → Formular ausfüllen → Hinzufügen  
     - Daten aktualisieren: `MarketData_Update.command` ausführen  
     - Sentiment-Update: `Update_Sentiment_External.command` ausführen  
     """)
