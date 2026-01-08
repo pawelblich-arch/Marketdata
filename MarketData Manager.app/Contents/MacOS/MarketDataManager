@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Wechsle ins MarketData-Verzeichnis
+cd "/Users/pawelblicharski/Software_Projekt/MarketData"
+
+# Nutze System Python (hat Tkinter)
+/usr/bin/python3 scripts/asset_manager_gui.py
+

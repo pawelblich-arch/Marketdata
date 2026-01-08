@@ -150,6 +150,92 @@ def update_symbol(symbol, start_date=None, log_file=None):
         return 0
 
 
+def update_sentiment_indicators(log_file=None):
+    """Aktualisiert Sentiment-Indikatoren (VIX, VDAX, etc.) via yfinance."""
+    
+    # Volatilitäts-Indices
+    sentiment_symbols = {
+        '^VIX': 'VIX',
+        '^VDAX': 'VDAX',
+        '^VSTOXX': 'VSTOXX',
+        '^OVX': 'OVX',
+        '^GVZ': 'GVZ',
+        '^EVZ': 'EVZ',
+        '^VXN': 'VXN',
+        '^RVX': 'RVX'
+    }
+    
+    log_message(f"📊 Starte Sentiment-Update für {len(sentiment_symbols)} Indikatoren", log_file)
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    total_inserted = 0
+    errors = 0
+    
+    # Bestimme Zeitraum
+    # Hole letztes Datum aus sentiment_data
+    last_date_result = cursor.execute("""
+        SELECT MAX(date) FROM sentiment_data
+    """).fetchone()
+    
+    if last_date_result[0]:
+        start_date = (datetime.strptime(last_date_result[0], '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+    else:
+        # Erstes Mal: Lade 20 Jahre Historie
+        start_date = (datetime.now() - timedelta(days=365*20)).strftime('%Y-%m-%d')
+    
+    end_date = datetime.now().strftime('%Y-%m-%d')
+    
+    for yf_symbol, indicator_name in sentiment_symbols.items():
+        log_message(f"   [{indicator_name}] Lade Daten...", log_file)
+        
+        try:
+            ticker = yf.Ticker(yf_symbol)
+            df = ticker.history(start=start_date, end=end_date, auto_adjust=True)
+            
+            if df.empty:
+                log_message(f"   [{indicator_name}] Keine neuen Daten", log_file)
+                continue
+            
+            inserted = 0
+            for date, row in df.iterrows():
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO sentiment_data 
+                        (indicator, date, value, value_high, value_low, source)
+                        VALUES (?, ?, ?, ?, ?, 'yfinance')
+                    """, (
+                        indicator_name,
+                        date.strftime('%Y-%m-%d'),
+                        float(row['Close']),  # Hauptwert = Close
+                        float(row['High']) if 'High' in row else None,
+                        float(row['Low']) if 'Low' in row else None
+                    ))
+                    inserted += 1
+                except Exception as e:
+                    log_message(f"   [{indicator_name}] Fehler bei {date}: {e}", log_file)
+            
+            conn.commit()
+            total_inserted += inserted
+            
+            if inserted > 0:
+                log_message(f"   [{indicator_name}] ✅ {inserted} neue Datenpunkte", log_file)
+            
+            # Rate Limit
+            time.sleep(1)
+            
+        except Exception as e:
+            log_message(f"   [{indicator_name}] ❌ Fehler: {e}", log_file)
+            errors += 1
+    
+    conn.close()
+    
+    log_message(f"📊 Sentiment-Update: {total_inserted} neue Datenpunkte, {errors} Fehler", log_file)
+    
+    return total_inserted, errors
+
+
 def update_all_symbols(log_file=None):
     """Aktualisiert alle aktiven Symbole."""
     
@@ -220,13 +306,30 @@ def main():
     log_message("", log_file)
     
     try:
+        # 1) Update OHLCV-Daten (Aktien, Indizes, etc.)
         inserted, errors = update_all_symbols(log_file)
         
-        if errors == 0:
+        log_message("", log_file)
+        
+        # 2) Update Sentiment-Indikatoren (VIX, VDAX, etc.)
+        sentiment_inserted, sentiment_errors = update_sentiment_indicators(log_file)
+        
+        total_errors = errors + sentiment_errors
+        
+        log_message("", log_file)
+        log_message("="*60, log_file)
+        log_message("📊 GESAMT-ZUSAMMENFASSUNG", log_file)
+        log_message("="*60, log_file)
+        log_message(f"   OHLCV-Daten: {inserted:,} neue Datenpunkte, {errors} Fehler", log_file)
+        log_message(f"   Sentiment: {sentiment_inserted:,} neue Datenpunkte, {sentiment_errors} Fehler", log_file)
+        log_message(f"   TOTAL: {inserted + sentiment_inserted:,} neue Datenpunkte", log_file)
+        log_message("="*60, log_file)
+        
+        if total_errors == 0:
             log_message("\n🎉 Update erfolgreich!", log_file)
             return True
         else:
-            log_message(f"\n⚠️  Update mit {errors} Fehlern abgeschlossen!", log_file)
+            log_message(f"\n⚠️  Update mit {total_errors} Fehlern abgeschlossen!", log_file)
             return False
             
     except Exception as e:
