@@ -1,282 +1,306 @@
-# 📊 Zentrale Marktdaten-Datenbank
+# 📊 MarketData Infrastructure
 
-**Version:** 1.0  
-**Erstellt:** 2026-01-08  
-**Zweck:** Zentrale, projektübergreifende Kursdatenbank für Trading-Tools
+**Zentrale Marktdaten-Datenbank für Trading-Tools**
 
 ---
 
 ## 🎯 Überblick
 
-Diese Datenbank dient als **Single Source of Truth** für alle Marktdaten (OHLCV) und wird von mehreren Trading-Projekten genutzt.
+Die **MarketData Infrastructure** ist eine professionelle, zentrale Datenbank für:
+- **OHLCV-Daten** (Open, High, Low, Close, Volume) für Aktien, Indizes, Rohstoffe
+- **Sentiment-Indikatoren** (VIX, VDAX, Fear & Greed, Put/Call Ratio, AAII)
+- **Marktbreite-Kennzahlen** (New Highs/Lows, Advance/Decline, etc.)
 
-### Vorteile
-- ✅ **Keine Daten-Duplikate** über Projekte hinweg
-- ✅ **Konsistente Datenqualität**
-- ✅ **Ein Update-Prozess** für alle Tools
-- ✅ **Einfache Backup-Strategie**
+**Warum zentral?**
+- ✅ Mehrere Applikationen nutzen dieselbe Datenquelle
+- ✅ Keine Redundanz, keine Inkonsistenzen
+- ✅ Automatische tägliche Updates
+- ✅ Professionelles Schema mit Versionierung
 
 ---
 
-## 📂 Ordnerstruktur
+## 📂 Struktur
 
 ```
 MarketData/
-├── market_data.db          # Hauptdatenbank (SQLite)
-├── config.yaml             # Konfiguration
-├── README.md               # Diese Datei
-│
+├── market_data.db              # Hauptdatenbank (NICHT auf GitHub!)
+├── config.yaml                 # Konfiguration
+├── schema.sql                  # Versioniertes Schema
 ├── scripts/
-│   ├── create_schema.py   # Erstellt DB-Schema
-│   ├── migrate_from_old.py # Migration aus alter DB
-│   └── daily_update.py    # Tägliches Update-Script
-│
-├── logs/
-│   └── update_YYYYMMDD.log # Tägliche Update-Logs
-│
-└── backups/
-    └── market_data_YYYYMMDD.db.bak # Automatische Backups
+│   ├── create_schema.py        # Datenbank initialisieren
+│   ├── daily_update.py         # OHLCV + Sentiment Update
+│   ├── update_sentiment_external.py  # Externe APIs (Fear & Greed, etc.)
+│   ├── asset_manager_web.py    # Streamlit GUI
+│   └── ...
+├── logs/                       # Update-Logs
+└── backups/                    # DB-Backups
 ```
 
 ---
 
 ## 🗄️ Datenbank-Schema
 
-### 1. `price_data` (OHLCV - Rohdaten)
-Speichert alle Kursdaten für Aktien, Indizes, Rohstoffe, FX.
+### **Tabellen:**
 
-**Spalten:**
-- `symbol` (TEXT): Ticker-Symbol (z.B. "AAPL", "^GSPC")
-- `date` (DATE): Handelsdatum
-- `open`, `high`, `low`, `close`, `adj_close` (REAL): Kursdaten
-- `volume` (INTEGER): Handelsvolumen
-- `data_quality` (TEXT): Qualitäts-Flag ('ok', 'gap', 'outlier')
-- `source` (TEXT): Datenquelle ('yfinance', 'eodhd', etc.)
+| Tabelle | Zweck | Anzahl Zeilen |
+|---------|-------|---------------|
+| `price_data` | OHLCV-Rohdaten | ~5 Millionen |
+| `asset_metadata` | Asset-Stammdaten | ~800 |
+| `sentiment_data` | VIX, Fear & Greed, etc. | ~50.000 |
+| `market_breadth` | Berechnete Marktbreite (Cache) | Leer (für TradingTool) |
+| `indicators_cache` | Pre-calculated Indikatoren | ~10 Millionen |
+| `data_quality_log` | Datenqualitäts-Tracking | ~5.000 |
+| `update_log` | Update-Historie | ~500 |
 
-**Primary Key:** `(symbol, date)`
-
-### 2. `asset_metadata` (Stammdaten)
-Katalog aller Assets mit Metadaten.
-
-**Spalten:**
-- `symbol` (TEXT): Ticker-Symbol
-- `name`, `asset_type`, `exchange`, `sector`, `industry`
-- `first_date`, `last_date`: Verfügbarer Zeitraum
-- `is_active` (INTEGER): Aktiv? (1/0)
-
-### 3. `indicators_cache` (Pre-calculated)
-Cache für langsame Indikatoren (Saisonalität, RSL, etc.)
-
-**Spalten:**
-- `symbol`, `date`, `indicator_name`, `value`
-- `calculation_version`: Versioning für Formeln
-
-### 4. `data_quality_log`
-Protokolliert Datenqualitäts-Probleme.
-
-### 5. `update_log`
-Tracking aller Update-Läufe.
-
----
-
-## 🚀 Setup & Initialisierung
-
-### 1. Schema erstellen
+### **Schema Export:**
 
 ```bash
-cd /Users/pawelblicharski/Software_Projekt/MarketData/scripts
-python3 create_schema.py
-```
-
-**Output:**
-```
-✅ Schema erfolgreich erstellt!
-   Datenbank: ../market_data.db
-   Tabellen: 5
-```
-
-### 2. Migration aus alter Datenbank (optional)
-
-Falls Sie bereits eine `trading_strategies.db` haben:
-
-```bash
-python3 migrate_from_old.py
-```
-
-**Was passiert:**
-- ✅ Backup der alten DB
-- ✅ Migration aller OHLCV-Daten → `price_data`
-- ✅ Automatische Asset-Katalogisierung → `asset_metadata`
-
-### 3. Erstes Daten-Update
-
-```bash
-python3 daily_update.py
-```
-
-**Was passiert:**
-- ✅ Lädt fehlende Daten für alle aktiven Assets
-- ✅ Erstellt Log-Datei in `logs/`
-- ✅ Speichert Update-Status in DB
-
----
-
-## 📅 Automatisierung (Cron-Job)
-
-Für **tägliche** Updates um 02:00 Uhr:
-
-```bash
-# Crontab öffnen
-crontab -e
-
-# Folgende Zeile hinzufügen:
-0 2 * * * /usr/bin/python3 /Users/pawelblicharski/Software_Projekt/MarketData/scripts/daily_update.py >> /Users/pawelblicharski/Software_Projekt/MarketData/logs/cron.log 2>&1
+sqlite3 market_data.db .dump > schema.sql
 ```
 
 ---
 
-## 🔌 Nutzung in Projekten
+## 🚀 Installation & Setup
 
-### Python-Zugriff
+### **1. Repository klonen:**
+
+```bash
+git clone https://github.com/pawelblich-arch/Marketdata.git
+cd Marketdata
+```
+
+### **2. Datenbank initialisieren:**
+
+```bash
+python3 scripts/create_schema.py
+```
+
+### **3. Erste Daten laden (Migration):**
+
+Falls Sie die alte `trading_strategies.db` haben:
+
+```bash
+python3 scripts/migrate_from_old.py
+```
+
+Oder manuell Assets hinzufügen und updaten:
+
+```bash
+./MarketData_Update.command
+```
+
+---
+
+## 🔄 Tägliche Updates
+
+### **Automatisch (via launchd):**
+
+```bash
+# Service installieren
+cp com.tradingsystem.marketdata.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.tradingsystem.marketdata.plist
+
+# Status prüfen
+launchctl list | grep marketdata
+```
+
+**Update läuft täglich um 02:00 Uhr und bei System-Start (falls verpasst).**
+
+### **Manuell:**
+
+```bash
+# OHLCV-Daten + VIX/VDAX/etc.
+./MarketData_Update.command
+
+# Externe Sentiment (Fear & Greed, AAII, Put/Call)
+./Update_Sentiment_External.command
+```
+
+---
+
+## 🖥️ Asset Manager (GUI)
+
+**Streamlit Web-GUI zur Verwaltung:**
+
+```bash
+./MarketData_Manager.command
+```
+
+**Features:**
+- 📊 **6 Tabellen:** Indices, Rohstoffe, Sentiment, S&P 500, Nasdaq, DAX
+- 📈 **Live-Statistiken:** Datenpunkte, Qualität, letztes Update
+- 🔍 **Sentiment-Übersicht:** VIX, VDAX, Fear & Greed mit letzten Werten
+- 🎨 **Moderne UI:** Keine "Deploy"-Buttons, clean & professionell
+
+**Screenshot:**
+
+![Asset Manager GUI](docs/screenshot_gui.png)
+
+---
+
+## 📊 Sentiment-Indikatoren
+
+### **Via yfinance (täglich automatisch):**
+
+| Indikator | Symbol | Beschreibung |
+|-----------|--------|--------------|
+| **VIX** | `^VIX` | S&P 500 Volatility Index |
+| **VDAX** | `^VDAX` | DAX Volatility Index |
+| **VSTOXX** | `^VSTOXX` | EuroStoxx 50 Volatility |
+| **OVX** | `^OVX` | Oil Volatility Index |
+| **GVZ** | `^GVZ` | Gold Volatility Index |
+| **EVZ** | `^EVZ` | Emerging Markets Volatility |
+| **VXN** | `^VXN` | Nasdaq 100 Volatility |
+| **RVX** | `^RVX` | Russell 2000 Volatility |
+
+### **Externe APIs (in Entwicklung):**
+
+| Indikator | Quelle | Status |
+|-----------|--------|--------|
+| **Fear & Greed Index** | CNN Money | ⚠️ Cloudflare-Schutz |
+| **AAII Sentiment** | AAII.com | ⚠️ Keine öffentliche API |
+| **Put/Call Ratio** | CBOE | ⚠️ Symbole nicht über yfinance |
+
+**💡 Lösung:** Web-Scraping oder alternative APIs (AlphaVantage, Quandl)
+
+---
+
+## 🛠️ Entwicklung
+
+### **Schema erweitern:**
+
+```bash
+# Neues Upgrade-Script erstellen
+python3 scripts/upgrade_schema_NEW.py
+```
+
+### **Neue Asset-Gruppe hinzufügen:**
+
+```python
+# In asset_manager_web.py
+asset_groups = ["sp500", "nasdaq100", "dax", "YOUR_NEW_GROUP"]
+```
+
+### **Backup erstellen:**
+
+```bash
+# Automatisch bei Updates
+# Manuell:
+cp market_data.db backups/market_data_$(date +%Y%m%d).db
+```
+
+---
+
+## 📝 API-Zugriff (für TradingTool)
 
 ```python
 import sqlite3
 from pathlib import Path
 
-# Verbindung zur zentralen DB
-DB_PATH = "/Users/pawelblicharski/Software_Projekt/MarketData/market_data.db"
-conn = sqlite3.connect(DB_PATH)
+DB_PATH = Path.home() / "Software_Projekt" / "MarketData" / "market_data.db"
 
-# Beispiel: Lade AAPL Kurse für 2025
+conn = sqlite3.connect(DB_PATH)
+cursor = conn.cursor()
+
+# OHLCV-Daten abfragen
 df = pd.read_sql_query("""
-    SELECT date, open, high, low, close, volume
-    FROM price_data
-    WHERE symbol = 'AAPL'
-      AND date >= '2025-01-01'
+    SELECT * FROM price_data 
+    WHERE symbol = 'AAPL' 
+    AND date >= '2020-01-01'
     ORDER BY date
 """, conn)
-```
 
-### Read-Only Zugriff (empfohlen)
+# Sentiment-Daten abfragen
+sentiment = pd.read_sql_query("""
+    SELECT * FROM sentiment_data 
+    WHERE indicator = 'VIX'
+    AND date >= '2020-01-01'
+    ORDER BY date
+""", conn)
 
-Projekte sollten nur **lesen**, nicht schreiben:
-
-```python
-# config.yaml im Projekt
-database:
-  market_data_path: "/Users/pawelblicharski/Software_Projekt/MarketData/market_data.db"
-  read_only: true  # Verhindert versehentliche Änderungen
-```
-
----
-
-## 🛠️ Wartung & Backup
-
-### Manuelles Backup
-
-```bash
-cd /Users/pawelblicharski/Software_Projekt/MarketData
-cp market_data.db backups/market_data_$(date +%Y%m%d).db
-```
-
-### Datenbank-Größe prüfen
-
-```bash
-sqlite3 market_data.db "
-SELECT 
-    'price_data' as table_name,
-    COUNT(*) as rows,
-    ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM price_data WHERE 1=1)), 2) as percent
-FROM price_data
-UNION ALL
-SELECT 'asset_metadata', COUNT(*), NULL FROM asset_metadata
-"
-```
-
-### Alte Logs löschen (älter als 90 Tage)
-
-```bash
-find logs/ -name "*.log" -mtime +90 -delete
+conn.close()
 ```
 
 ---
 
-## 📊 Datenquellen
+## 🔒 Sicherheit
 
-**Aktuell:** yfinance (kostenlos, 20+ Jahre Historie)  
-**Geplant:** EODHD, Alpha Vantage (für zusätzliche Assets)
-
-### Asset-Universum
-
-| Kategorie | Anzahl | Beispiele |
-|-----------|--------|-----------|
-| **Indizes** | ~10 | ^GSPC, ^DJI, ^IXIC, ^GDAXI |
-| **S&P 500** | 500 | AAPL, MSFT, GOOGL, ... |
-| **Nasdaq 100** | 100 | TSLA, NVDA, META, ... |
-| **DAX** | 40 | SAP, SIE, VOW3, ... |
-| **Rohstoffe** | ~10 | GC=F (Gold), SI=F (Silber), CL=F (Öl) |
-| **FX** | ~5 | EURUSD=X, GBPUSD=X, ... |
+- ✅ **Datenbank NICHT auf GitHub** (`.gitignore`)
+- ✅ **Schema versioniert** (`schema.sql`)
+- ✅ **Automatische Backups** bei jedem Update
+- ✅ **Separater DB-Pfad** (außerhalb des TradingTool-Repos)
 
 ---
 
-## ⚠️ Wichtige Hinweise
+## 📊 Statistiken (Stand: 08.01.2026)
 
-### Datenqualität
-
-- ✅ **auto_adjust=True** bei yfinance (Split/Dividenden-bereinigt)
-- ✅ **Outlier-Detection** (Änderungen >20% werden geloggt)
-- ✅ **Gap-Detection** (Fehlende Handelstage werden markiert)
-
-### Performance
-
-- **Batch-Updates:** 100 Symbole pro Durchlauf
-- **Rate Limit:** 1 Request/Sekunde (yfinance)
-- **Caching:** Häufig genutzte Indikatoren in `indicators_cache`
-
-### Speicherplatz
-
-- **500 Assets × 20 Jahre × 252 Tage:** ~500 MB (OHLCV)
-- **Indikatoren-Cache:** ~200 MB
-- **Empfohlen:** Min. 2 GB freier Speicher
+| Metrik | Wert |
+|--------|------|
+| **Datenbank-Größe** | 1.2 GB |
+| **OHLCV-Datenpunkte** | ~5 Millionen |
+| **Assets** | ~800 (aktiv) |
+| **Sentiment-Indikatoren** | 8 (via yfinance) |
+| **Update-Frequenz** | Täglich (02:00 Uhr) |
+| **Historische Daten** | Seit 1990 |
 
 ---
 
 ## 🆘 Troubleshooting
 
-### Problem: "Database is locked"
+### **Problem: Update schlägt fehl**
 
-**Ursache:** Gleichzeitiger Zugriff von mehreren Prozessen.  
-**Lösung:** Nutze read-only Verbindungen in Projekten.
+```bash
+# Logs prüfen
+cat logs/update_$(date +%Y%m%d).log
 
-### Problem: "No data for symbol XYZ"
+# Manuelle Ausführung mit Fehler-Details
+cd /Users/pawelblicharski/Software_Projekt/MarketData
+source /path/to/venv/bin/activate
+python3 scripts/daily_update.py
+```
 
-**Ursache:** Symbol nicht aktiv oder delisted.  
-**Lösung:** Prüfe `asset_metadata` und setze `is_active=0`.
+### **Problem: GUI startet nicht**
 
-### Problem: Update dauert zu lange
+```bash
+# Streamlit neu installieren
+pip install --upgrade streamlit
 
-**Ursache:** Zu viele Symbole.  
-**Lösung:** Anpassen in `config.yaml` → `batch_size` erhöhen.
+# Port ändern (falls 8501 belegt)
+streamlit run scripts/asset_manager_web.py --server.port 8502
+```
 
----
+### **Problem: Sentiment-Daten fehlen**
 
-## 📞 Support
+```bash
+# Schema-Upgrade ausführen
+python3 scripts/upgrade_schema_sentiment.py
 
-Bei Fragen oder Problemen:
-- **Log-Dateien prüfen:** `logs/update_YYYYMMDD.log`
-- **Datenqualität prüfen:** `SELECT * FROM data_quality_log ORDER BY detected_at DESC LIMIT 50`
-
----
-
-## 📝 Changelog
-
-### Version 1.0 (2026-01-08)
-- ✅ Initiales Setup
-- ✅ Schema-Erstellung
-- ✅ Migrations-Script
-- ✅ Daily-Update-Script
-- ✅ Dokumentation
+# Externe Sentiment-Update testen
+python3 scripts/update_sentiment_external.py
+```
 
 ---
 
-**Viel Erfolg mit Ihrer Trading-Datenbank! 🚀**
+## 🤝 Beiträge
+
+Dieses Repository ist Teil eines privaten Trading-Systems. Pull Requests sind willkommen für:
+- 🐛 Bug-Fixes
+- 📝 Dokumentations-Verbesserungen
+- 🚀 Performance-Optimierungen
+- 🔌 Neue Datenquellen-Integrationen
+
+---
+
+## 📄 Lizenz
+
+Privates Projekt. Alle Rechte vorbehalten.
+
+---
+
+## 📧 Kontakt
+
+Bei Fragen oder Problemen: [GitHub Issues](https://github.com/pawelblich-arch/Marketdata/issues)
+
+---
+
+**🎉 Happy Trading!**
