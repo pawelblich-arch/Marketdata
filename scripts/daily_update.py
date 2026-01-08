@@ -13,12 +13,14 @@ import yfinance as yf
 from pathlib import Path
 from datetime import datetime, timedelta
 import time
+import json
 
 
 BASE_DIR = Path(__file__).parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
 DB_PATH = BASE_DIR / "market_data.db"
 LOG_DIR = BASE_DIR / "logs"
+STATUS_FILE = BASE_DIR / "update_status.json"
 
 
 def load_config():
@@ -44,6 +46,25 @@ def log_message(message, log_file=None):
     if log_file:
         with open(log_file, 'a') as f:
             f.write(log_line + '\n')
+
+
+def update_status(status, current=0, total=0, message="", phase="ohlcv"):
+    """Schreibt Update-Status in JSON-Datei für GUI."""
+    status_data = {
+        'status': status,  # 'running', 'completed', 'error'
+        'phase': phase,    # 'ohlcv', 'sentiment', 'completed'
+        'current': current,
+        'total': total,
+        'progress': (current / total * 100) if total > 0 else 0,
+        'message': message,
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    try:
+        with open(STATUS_FILE, 'w') as f:
+            json.dump(status_data, f, indent=2)
+    except Exception as e:
+        print(f"Warnung: Konnte Status nicht schreiben: {e}")
 
 
 def get_symbols_to_update():
@@ -167,6 +188,15 @@ def update_sentiment_indicators(log_file=None):
     
     log_message(f"📊 Starte Sentiment-Update für {len(sentiment_symbols)} Indikatoren", log_file)
     
+    # Update Status
+    update_status(
+        status='running',
+        phase='sentiment',
+        current=0,
+        total=len(sentiment_symbols),
+        message="Lade Sentiment-Indikatoren..."
+    )
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -187,8 +217,17 @@ def update_sentiment_indicators(log_file=None):
     
     end_date = datetime.now().strftime('%Y-%m-%d')
     
-    for yf_symbol, indicator_name in sentiment_symbols.items():
+    for idx, (yf_symbol, indicator_name) in enumerate(sentiment_symbols.items(), 1):
         log_message(f"   [{indicator_name}] Lade Daten...", log_file)
+        
+        # Update Status
+        update_status(
+            status='running',
+            phase='sentiment',
+            current=idx,
+            total=len(sentiment_symbols),
+            message=f"Lade {indicator_name}..."
+        )
         
         try:
             ticker = yf.Ticker(yf_symbol)
@@ -248,6 +287,15 @@ def update_all_symbols(log_file=None):
     
     for i, symbol in enumerate(symbols, 1):
         log_message(f"   [{i}/{len(symbols)}] {symbol}", log_file)
+        
+        # Update Status für GUI
+        update_status(
+            status='running',
+            phase='ohlcv',
+            current=i,
+            total=len(symbols),
+            message=f"Lade {symbol}..."
+        )
         
         try:
             inserted = update_symbol(symbol, log_file=log_file)
@@ -327,9 +375,23 @@ def main():
         
         if total_errors == 0:
             log_message("\n🎉 Update erfolgreich!", log_file)
+            update_status(
+                status='completed',
+                phase='completed',
+                current=0,
+                total=0,
+                message="Update erfolgreich abgeschlossen!"
+            )
             return True
         else:
             log_message(f"\n⚠️  Update mit {total_errors} Fehlern abgeschlossen!", log_file)
+            update_status(
+                status='completed',
+                phase='completed',
+                current=0,
+                total=0,
+                message=f"Update mit {total_errors} Fehlern abgeschlossen"
+            )
             return False
             
     except Exception as e:

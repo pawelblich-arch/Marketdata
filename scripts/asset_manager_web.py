@@ -12,10 +12,13 @@ import sqlite3
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
+import json
+import time
 
 # Pfade
 BASE_DIR = Path(__file__).parent.parent
 DB_PATH = BASE_DIR / "market_data.db"
+STATUS_FILE = BASE_DIR / "update_status.json"
 
 # Seitenkonfiguration
 st.set_page_config(
@@ -63,6 +66,29 @@ st.markdown("""
 def get_connection():
     """DB-Verbindung (gecached)."""
     return sqlite3.connect(DB_PATH, check_same_thread=False)
+
+
+def get_update_status():
+    """Liest Update-Status aus JSON-Datei."""
+    if not STATUS_FILE.exists():
+        return None
+    
+    try:
+        with open(STATUS_FILE, 'r') as f:
+            status = json.load(f)
+        
+        # Prüfe ob Status älter als 5 Minuten (Update ist abgebrochen)
+        if 'timestamp' in status:
+            status_time = datetime.fromisoformat(status['timestamp'])
+            age_minutes = (datetime.now() - status_time).total_seconds() / 60
+            
+            if age_minutes > 5 and status['status'] == 'running':
+                status['status'] = 'stale'
+                status['message'] = 'Update scheint abgebrochen zu sein'
+        
+        return status
+    except Exception as e:
+        return None
 
 
 def load_assets_by_group(asset_group=None, asset_type=None, search_term=None):
@@ -362,11 +388,54 @@ def main():
                 st.success("✅ Update gestartet!")
                 st.info(f"📊 Lädt Daten für alle aktiven Assets...\n\nLog: `{log_path.name}`")
                 st.caption("⏱️ Dauer: ~10-15 Minuten für alle Assets")
+                time.sleep(1)
+                st.rerun()  # Reload um Progress zu zeigen
                 
             except Exception as e:
                 st.error(f"❌ Fehler: {e}")
         
         st.caption("💡 Lädt OHLCV-Daten + Sentiment (VIX, VDAX, etc.)")
+        
+        # Update-Status anzeigen (falls läuft)
+        status = get_update_status()
+        
+        if status and status['status'] == 'running':
+            st.markdown("---")
+            st.subheader("⏳ Update läuft...")
+            
+            # Phase anzeigen
+            phase_labels = {
+                'ohlcv': '📊 OHLCV-Daten',
+                'sentiment': '📈 Sentiment-Daten',
+                'completed': '✅ Abgeschlossen'
+            }
+            current_phase = phase_labels.get(status['phase'], status['phase'])
+            st.caption(f"**Phase:** {current_phase}")
+            
+            # Progress Bar
+            if status['total'] > 0:
+                progress = status['progress'] / 100
+                st.progress(progress)
+                st.caption(f"{status['current']} / {status['total']} Assets ({status['progress']:.1f}%)")
+            
+            # Aktuelle Aktion
+            if status['message']:
+                st.caption(f"🔄 {status['message']}")
+            
+            # Auto-Refresh alle 3 Sekunden
+            st.caption("🔄 Auto-Refresh in 3 Sekunden...")
+            time.sleep(3)
+            st.rerun()
+        
+        elif status and status['status'] == 'completed':
+            st.markdown("---")
+            st.success("✅ Update abgeschlossen!")
+            st.caption(status['message'])
+            
+            # Button zum Löschen des Status
+            if st.button("🗑️ Status zurücksetzen", use_container_width=True):
+                STATUS_FILE.unlink(missing_ok=True)
+                st.rerun()
         
         # Externe Sentiment Update
         if st.button("📊 Externe Sentiment laden", use_container_width=True):
