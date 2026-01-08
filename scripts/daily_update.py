@@ -174,16 +174,16 @@ def update_symbol(symbol, start_date=None, log_file=None):
 def update_sentiment_indicators(log_file=None):
     """Aktualisiert Sentiment-Indikatoren (VIX, VDAX, etc.) via yfinance."""
     
-    # Volatilitäts-Indices
+    # Volatilitäts-Indices (nur verfügbare über yfinance)
     sentiment_symbols = {
-        '^VIX': 'VIX',
-        '^VDAX': 'VDAX',
-        '^VSTOXX': 'VSTOXX',
-        '^OVX': 'OVX',
-        '^GVZ': 'GVZ',
-        '^EVZ': 'EVZ',
-        '^VXN': 'VXN',
-        '^RVX': 'RVX'
+        '^VIX': 'VIX',      # S&P 500 Volatility
+        '^VXN': 'VXN',      # Nasdaq 100 Volatility
+        '^OVX': 'OVX',      # Oil Volatility
+        '^GVZ': 'GVZ',      # Gold Volatility
+        '^EVZ': 'EVZ',      # Emerging Markets Volatility
+        # '^VDAX': 'VDAX',   # NICHT VERFÜGBAR über yfinance
+        # '^VSTOXX': 'VSTOXX', # NICHT VERFÜGBAR über yfinance
+        # '^RVX': 'RVX'      # NICHT VERFÜGBAR über yfinance
     }
     
     log_message(f"📊 Starte Sentiment-Update für {len(sentiment_symbols)} Indikatoren", log_file)
