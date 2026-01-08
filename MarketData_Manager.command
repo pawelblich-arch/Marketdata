@@ -22,6 +22,16 @@ echo -e "${BLUE}============================================================${NC
 echo -e "${BLUE}       📊 MarketData Asset Manager (Web GUI)${NC}"
 echo -e "${BLUE}============================================================${NC}"
 echo ""
+
+# Prüfe, ob Port 8501 bereits belegt ist
+if lsof -Pi :8501 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+    echo -e "${GREEN}🔄 Port 8501 ist belegt - stoppe alten Prozess...${NC}"
+    lsof -ti:8501 | xargs kill -9 2>/dev/null
+    sleep 2
+    echo -e "${GREEN}✅ Alter Prozess beendet${NC}"
+    echo ""
+fi
+
 echo -e "${GREEN}✅ Starte Streamlit...${NC}"
 echo -e "${GREEN}🌐 Browser öffnet sich automatisch${NC}"
 echo ""
