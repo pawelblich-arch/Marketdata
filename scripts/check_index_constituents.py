@@ -18,8 +18,20 @@ DB_PATH = Path(__file__).parent.parent / "market_data.db"
 def get_sp500_constituents():
     """Holt aktuelle S&P 500 Constituents von Wikipedia."""
     try:
+        import requests
+        from io import StringIO
+        
         url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        tables = pd.read_html(url)
+        
+        # User-Agent Header hinzufügen (täuscht Browser vor)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        tables = pd.read_html(StringIO(response.text))
         df = tables[0]  # Erste Tabelle = Current S&P 500 components
         
         # Symbol bereinigen (BRK.B -> BRK-B für yfinance)
@@ -34,8 +46,19 @@ def get_sp500_constituents():
 def get_nasdaq100_constituents():
     """Holt aktuelle Nasdaq 100 Constituents."""
     try:
+        import requests
+        from io import StringIO
+        
         url = "https://en.wikipedia.org/wiki/Nasdaq-100"
-        tables = pd.read_html(url)
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        tables = pd.read_html(StringIO(response.text))
         
         # Die richtige Tabelle finden (enthält "Ticker")
         for table in tables:
@@ -55,8 +78,19 @@ def get_nasdaq100_constituents():
 def get_dax_constituents():
     """Holt aktuelle DAX Constituents."""
     try:
+        import requests
+        from io import StringIO
+        
         url = "https://en.wikipedia.org/wiki/DAX"
-        tables = pd.read_html(url)
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        tables = pd.read_html(StringIO(response.text))
         
         # Erste Tabelle = DAX constituents
         df = tables[0]
